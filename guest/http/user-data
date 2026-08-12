@@ -1,0 +1,11 @@
+#cloud-config
+# Minimal seed so packer can SSH into the image while installing Ensō. The
+# source image normally already has this user; re-applying it is harmless and
+# keeps the template working on a plain cloud image too.
+ssh_pwauth: True
+users:
+  - name: ubuntu
+    plain_text_passwd: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: false

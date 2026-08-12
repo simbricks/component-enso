@@ -1,0 +1,13 @@
+name: conda-packages
+
+on:
+  push:
+    branches:
+      - main
+      - release
+  workflow_dispatch:
+
+jobs:
+  conda-packages:
+    uses: simbricks/ci-workflows/.github/workflows/conda-packages.yml@v2
+    secrets: inherit

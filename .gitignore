@@ -1,1 +1,10 @@
 __pycache__/
+.vscode
+out/
+dist/
+conda-out/
+
+# Build artifacts of enso_bm/
+*.o
+*.d
+enso_bm/simb_enso_bm

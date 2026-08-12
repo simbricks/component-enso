@@ -352,10 +352,6 @@ A complete two-host experiment is in [`examples/enso_echo.py`](examples/enso_ech
 
 ## Status and known issues
 
-- **Synchronization.** PR #138 reported that the model only worked with synchronization disabled on the
-  network switch. Unsynchronized is the default in the current API, so the example works as-is, but running
-  Ensō in a *synchronized* simulation has not been re-validated. Investigate before relying on timing
-  results.
 - **PCIe address.** `EnsoGen` does not pass `--pcie-addr` by default and lets `ensogen` find the device.
   QEMU assigns the BDF and it is not knowable from the orchestration side; set `EnsoGen.pcie_addr` if
   autodetection picks the wrong device.

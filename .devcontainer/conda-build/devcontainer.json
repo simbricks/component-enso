@@ -1,5 +1,9 @@
 {
 	"image": "registry.simbricks.io/internal/conda-docker-image/conda-build-env:latest",
+	"runArgs": [
+		"--device=/dev/kvm"
+	],
+	"postStartCommand": "sudo chmod 666 /dev/kvm || true",
 	"customizations": {
 		"vscode": {
 			"extensions": [

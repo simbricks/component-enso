@@ -20,10 +20,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
-simbricks_version:
-  - "0.5.1"
-homepage:
-  - "https://www.simbricks.io/"
-github_org:
-  - "https://github.com/simbricks/component-enso"
+c_compiler:
+  - gcc
+c_compiler_version:
+  - "13"
+cxx_compiler:
+  - gxx
+cxx_compiler_version:
+  - "13"
+target_platform:
+  - linux-64
+c_stdlib:
+  - sysroot
+c_stdlib_version:
+  - "2.17"

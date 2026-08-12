@@ -20,10 +20,39 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+package:
+  name: simbricks-enso-sim-bm-bin
+  version: {{ simbricks_version }}
 
-simbricks_version:
-  - "0.5.1"
-homepage:
-  - "https://www.simbricks.io/"
-github_org:
-  - "https://github.com/simbricks/component-enso"
+source:
+  path: ../../
+
+build:
+  number: 0
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - {{ stdlib('c') }}
+    - make
+
+  host:
+    - simbricks-lib >=0.5.0
+    - libboost-devel
+
+  run:
+    - simbricks-enso-sim-bm-py =={{ simbricks_version }}
+    - simbricks-enso-sys-py =={{ simbricks_version }}
+
+about:
+  home: {{ homepage }}
+  license: MIT
+  license_family: MIT
+  license_file: ../../LICENSE
+  summary: SimBricks integration of the Ensō NIC behavioral model.
+  dev_url: {{ github_org }}
+
+extra:
+  recipe-maintainers:
+    - Team SimBricks <team@simbricks.io>

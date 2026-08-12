@@ -20,10 +20,42 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+{% set name = "simbricks-enso-sys-py" %}
 
-simbricks_version:
-  - "0.5.1"
-homepage:
-  - "https://www.simbricks.io/"
-github_org:
-  - "https://github.com/simbricks/component-enso"
+package:
+  name: {{ name|lower }}
+  version: {{ simbricks_version }}
+
+source:
+  path: ../../enso_sys_py
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+
+requirements:
+  host:
+    - python >=3.10
+    - poetry-core >=1.0.0
+    - pip
+  run:
+    - python >=3.10
+    - simbricks-orchestration >=0.5.0
+    - simbricks-utils >=0.5.0
+
+test:
+  imports:
+    - simbricks.components.enso.system
+
+about:
+  home: {{ homepage }}
+  license: MIT
+  license_family: MIT
+  license_file: ../../LICENSE
+  summary: Ensō NIC system integration into SimBricks
+  dev_url: {{ github_org }}
+
+extra:
+  recipe-maintainers:
+    - Team SimBricks <team@simbricks.io>

@@ -81,6 +81,8 @@ simulation = sim_helpers.simple_simulation(
         system.EthSwitch: net_sim.SwitchNet,
     },
 )
+# optionally enable synchronization
+#simulation.enable_synchronization()
 
 instantiation = inst_helpers.simple_instantiation(simulation)
 

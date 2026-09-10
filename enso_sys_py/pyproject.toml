@@ -38,7 +38,12 @@ homepage = "https://www.simbricks.io/"
 packages = [
   { include = "simbricks" }
 ]
+# Guest install script, shipped as package data.
+include = [
+  { path = "simbricks/components/enso/system/data/*", format = ["sdist", "wheel"] }
+]
 
 [tool.poetry.dependencies]
-simbricks-orchestration = ">=0.5.0"
+simbricks-orchestration = ">=0.5.2"
 simbricks-utils = ">=0.5.0"
+simbricks-imagebuild-packer = ">=0.5.2"

@@ -21,12 +21,13 @@
 # TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from .enso import EnsoDiskImage, EnsoEchoServer, EnsoGen, EnsoLinuxHost, EnsoNIC
+from .enso import EnsoEchoServer, EnsoGen, EnsoLinuxHost, EnsoNIC
+from .image import enso_image
 
 __all__ = [
     "EnsoNIC",
     "EnsoLinuxHost",
-    "EnsoDiskImage",
     "EnsoEchoServer",
     "EnsoGen",
+    "enso_image",
 ]

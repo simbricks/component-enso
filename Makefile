@@ -29,6 +29,7 @@ ENSO_PY_SYS       := enso_sys_py
 OUTPUT_FOLDER     ?=
 OUTPUT_FLAG       := $(if $(OUTPUT_FOLDER),--output-folder $(OUTPUT_FOLDER))
 SIMB_CONDA_CHANNEL:= -c https://conda.simbricks.io/stable
+GUEST_SCRIPT      := $(ENSO_PY_SYS)/simbricks/components/enso/system/data/install-enso.sh
 BASE_BUILD_CMD    := conda build $(SIMB_CONDA_CHANNEL) -m conda-recipes/conda_build_config.yaml $(OUTPUT_FLAG)
 
 .PHONY: all enso-build enso-install enso-python-develop guest-install \
@@ -46,7 +47,7 @@ enso-install: enso-build
 
 ## --- Guest-side software ---------------------------------------------------
 guest-install:
-	bash guest/install-enso.sh
+	bash $(GUEST_SCRIPT)
 
 ## --- Python packages -------------------------------------------------------
 enso-python-develop:

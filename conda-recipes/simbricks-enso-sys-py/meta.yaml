@@ -41,12 +41,15 @@ requirements:
     - pip
   run:
     - python >=3.10
-    - simbricks-orchestration >=0.5.0
+    - simbricks-orchestration >=0.5.2
     - simbricks-utils >=0.5.0
+    - simbricks-imagebuild-packer >=0.5.2
 
 test:
   imports:
     - simbricks.components.enso.system
+  commands:
+    - test -f $SP_DIR/simbricks/components/enso/system/data/install-enso.sh
 
 about:
   home: {{ homepage }}

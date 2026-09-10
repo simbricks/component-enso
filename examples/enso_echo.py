@@ -27,8 +27,6 @@ This is the modern port of the experiment from
 https://github.com/simbricks/simbricks/pull/138.
 """
 
-import pathlib
-
 from simbricks.components.enso import system as enso_sys
 from simbricks.components.enso.simulation import behavioral as enso_sim
 from simbricks.components.net.simulation import base as net_sim
@@ -39,15 +37,9 @@ from simbricks.orchestration.helpers import simulation as sim_helpers
 
 syst = system.System("Enso-Echo")
 
-GUEST_DIR = str(pathlib.Path(__file__).resolve().parent.parent / "guest")
-# The `base` image with Ensō installed into it. The install runs on the
-# orchestration host before the simulation starts: packer boots `base`, runs
-# guest/install-enso.sh inside it and writes the result into the run's image
-# dir. It is rebuilt on every run.
-enso_img = enso_sys.EnsoDiskImage(syst, guest_dir=GUEST_DIR)
-
-# Alternatively, install Ensō out of band and use the result directly:
-# enso_img = system.DistroDiskImage(syst, "enso")
+# The SimBricks `base` image with Ensō installed into it, built by packer when
+# the run is prepared.
+enso_img = enso_sys.enso_image(syst)
 
 server = enso_sys.EnsoLinuxHost(syst)
 server.add_disk(enso_img)
@@ -85,12 +77,5 @@ simulation = sim_helpers.simple_simulation(
 #simulation.enable_synchronization()
 
 instantiation = inst_helpers.simple_instantiation(simulation)
-
-# guest/ holds the packer template and the install script the image build needs,
-# and its path is local to this machine. Ship it so a remote runner has it too:
-# the client packs each entry flat, so the runner unpacks it to
-# input_artifacts/guest/, which is where EnsoDiskImage looks when the local path
-# is absent. A remote runner additionally needs packer and the `base` image.
-instantiation.input_artifact_paths = [GUEST_DIR]
 
 instantiations = [instantiation]

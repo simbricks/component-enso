@@ -39,8 +39,8 @@ modifications.
 | `conda-recipes/simbricks-enso-sim-bm-py/` | Conda recipe for the noarch simulation python package. |
 | `conda-recipes/simbricks-enso-sim-bm-bin/` | Conda recipe for the compiled model (`simbricks-enso-sim-bm-bin`). |
 | `conda-recipes/conda_build_config.yaml` | Shared version / URL variables used by all recipes. |
-| `guest/enso.pkr.hcl` | Packer template that installs Ensō into an existing guest image (option 1). |
-| `guest/install-enso.sh` | The guest-side install step it runs — also usable as an image-builder component script (option 2). |
+| `enso_sys_py/…/system/image.py` | `enso_image()` — the guest image, as a layer on the SimBricks `base` image. |
+| `enso_sys_py/…/system/data/install-enso.sh` | The guest-side install step that layer runs. Shipped inside the package, so building an image needs no checkout. |
 | `examples/enso_echo.py` | Runnable virtual prototype: EnsoGen against an Ensō echo server. |
 | `Makefile` | Top-level driver for the builds below. |
 | `.devcontainer/conda-build/` | VS Code dev container providing a ready-to-use conda build environment. |
@@ -50,9 +50,10 @@ modifications.
 This repo produces three packages:
 
 - **`simbricks-enso-sys-py`** — noarch Python package with the *system* components: `EnsoNIC`,
-  `EnsoLinuxHost` and the `EnsoEchoServer` / `EnsoGen` applications. These describe *what* is being built
-  and carry no simulator dependency, so a system description can be written (and shared) without installing
-  the model.
+  `EnsoLinuxHost`, the `EnsoEchoServer` / `EnsoGen` applications, and `enso_image()`. These describe *what*
+  is being built and carry no simulator dependency, so a system description can be written (and shared)
+  without installing the model. It also carries the guest install script, and depends on
+  `simbricks-imagebuild-packer` (which pulls in `packer`) for the image build.
 - **`simbricks-enso-sim-bm-py`** — noarch Python package with `EnsoNicSim`, the simulator choice for an
   `EnsoNIC`. It builds on the system package (both live in the shared `simbricks.components.enso` namespace)
   and pins it with `==` to the co-built version.
@@ -65,9 +66,11 @@ The `bm` in the names is the *flavor* — a behavioral model. Ensō also has rea
 `rtl` flavor can be added alongside this one later without moving anything.
 
 External dependencies that are *not* built here — `simbricks-lib` (needed to build the model) and
-`simbricks-orchestration` / `simbricks-utils` (runtime deps of the python packages) — are resolved
-automatically from the public SimBricks conda channel (`https://conda.simbricks.io/latest`, wired into the
-build via the Makefile's `SIMB_CONDA_CHANNEL`). You do **not** need to install them by hand.
+`simbricks-orchestration` / `simbricks-utils` / `simbricks-imagebuild-packer` (runtime deps of the python
+packages) — are resolved automatically from the public SimBricks conda channel
+(`https://conda.simbricks.io/latest`, wired into the build via the Makefile's `SIMB_CONDA_CHANNEL`). You do
+**not** need to install them by hand. The channel has to be `latest`: `simbricks-imagebuild-packer` is not
+on `stable` yet.
 
 ## Prerequisites
 
@@ -103,113 +106,96 @@ The image the simulated hosts boot has to carry the Ensō guest software — its
 module and its userspace library and example binaries. Hugepages are set up at boot instead, see
 [At run time](#at-run-time-driver-and-hugepages).
 
-Getting the software into an image is one guest-side script, [`guest/install-enso.sh`](guest/install-enso.sh):
-it clones Ensō, hands off to Ensō's own `setup.sh`, and then installs the built module under
-`/lib/modules/<kver>/extra` and runs `depmod`, so a plain `modprobe` finds it. Two constraints follow from
-the kernel module: the image needs a kernel build tree at `/lib/modules/$(uname -r)/build`, and the script
-must run **on the kernel the simulated hosts will boot** — an out-of-tree module is tied to the exact
-kernel it was compiled against.
+Getting the software into an image is one guest-side script,
+[`install-enso.sh`](enso_sys_py/simbricks/components/enso/system/data/install-enso.sh): it clones Ensō,
+hands off to Ensō's own `setup.sh`, and then installs the built module under `/lib/modules/<kver>/extra` and
+runs `depmod`, so a plain `modprobe` finds it. Two constraints follow from the kernel module: the image
+needs a kernel build tree at `/lib/modules/$(uname -r)/build`, and the script must run **on the kernel the
+simulated hosts will boot** — an out-of-tree module is tied to the exact kernel it was compiled against.
 
-### Two ways to get an image
+### Building the image
 
-|  | 1. Specialize at run time | 2. Build your own image |
-|---|---|---|
-| Who builds it | `EnsoDiskImage`, on every run | you, once, up front |
-| Template | this repo's [`guest/enso.pkr.hcl`](guest/enso.pkr.hcl) | `image.pkr.hcl` from [simbricks/image-builder](https://github.com/simbricks/image-builder) |
-| Starts from | an existing SimBricks image (`base`) | a cloud image, or a base image built earlier |
-| Cost | a full Ensō build per simulation run | none at run time |
-| Image name in orchestration | stays `base` | yours, e.g. `enso` |
-| Wired up as | `enso_sys.EnsoDiskImage(syst, guest_dir=...)` | `system.DistroDiskImage(syst, "enso")` |
-
-Both exist to solve the same problem. Packer runs every provisioning stage in a *single* boot of the source
-image, so `uname -r` inside a stage names the **source** image's kernel even after a different one has been
-installed — the module would be built against the wrong kernel. Option 1 sidesteps that by booting the very
-image the module will be loaded into; option 2 handles it with a reboot between the base stages and the
-component scripts (see below).
-
-Option 1 is what [`examples/enso_echo.py`](examples/enso_echo.py) does: nothing to prepare, at the price of
-a packer run before every simulation. Prefer option 2 as soon as you run the same image more than a couple
-of times, or on a runner where you would rather not have packer in the loop.
-
-### Option 1 — specialize the base image at run time
-
-`EnsoDiskImage` is a `DynamicDiskImage`: from `_prepare_format` — on the orchestration host, *before* the
-simulation starts — it runs packer on [`guest/enso.pkr.hcl`](guest/enso.pkr.hcl), which boots the image the
-hosts would otherwise run, executes `install-enso.sh` inside it, and writes the result out.
+`enso_image()` describes that as a layer on top of the SimBricks `base` image, in SimBricks' layered
+image-build API:
 
 ```python
-enso_img = enso_sys.EnsoDiskImage(syst, guest_dir=".../component-enso/guest")
+from simbricks.components.enso.system import enso_image
+
+enso_img = enso_image(syst)
 host.add_disk(enso_img)
 ```
 
-That is all the wiring there is, and only one image name is in play. It derives from `DistroDiskImage` and
-keeps the name of the image it installs into (`base` by default), so a host simulator booting an external
-kernel finds it under `images/base/boot/` exactly as it would without Ensō — installing Ensō does not touch
-the kernel. Only `path()` differs, pointing at the built image, which lands in the run's image dir; the
-original is left untouched. Built once per run, however many hosts share it, and rebuilt on the next run.
+That is the whole wiring, and it is what [`examples/enso_echo.py`](examples/enso_echo.py) does. The build
+runs on the runner while the simulation is prepared. It returns a
+[`PackerImage`](https://github.com/simbricks/simbricks/tree/main/symphony/imagebuild-packer), so packer
+boots the `base` image and runs the install inside it — which is exactly what the kernel-module constraint
+above demands. The cheaper offline backend (`GuestfsImage`, libguestfs) is *not* usable here: in its
+appliance `uname -r` names the appliance's kernel, and Ensō's `setup.sh` insmods the module it just built.
 
-Needs `packer` on `PATH` and the `base` image in the global input dir. For a **remote** runner, ship
-`guest/` along by adding it to `instantiation.input_artifact_paths` (the example does); `EnsoDiskImage`
-falls back to `input_artifacts/guest/` when the local path is absent. The runner then needs packer and the
-`base` image too.
+Because it is an ordinary `PackerImage`, the build can still be adjusted — `enso_img.cleanup = False`,
+`enso_img.accelerator = "tcg"`, `enso_img.mem_size`, `.cpus`, `.disk_size`. The defaults are 16 GiB of disk,
+16 GiB of RAM and 4 vCPUs for the build machine, carried over from the packer template this replaces.
 
-The same specialization by hand, without orchestration:
+The kernel the host simulator boots now comes out of the built image itself — packer collects `vmlinuz` (and
+`initrd`, `vmlinux`) during the build and they are cached with it. Nothing reads `images/base/boot/` any
+more.
 
-```sh
-cd guest
-packer init enso.pkr.hcl
-packer build \
-    -var source_image=/path/to/images/base/base \
-    -var "scripts=[\"$PWD/install-enso.sh\"]" \
-    -var name=enso -var output=/tmp/enso-image \
-    enso.pkr.hcl                                   # -> /tmp/enso-image/enso
-```
+### Caching
 
-### Option 2 — build your own image
-
-[simbricks/image-builder](https://github.com/simbricks/image-builder) builds a SimBricks image from a cloud
-image and runs component install scripts as opaque guest-side stages, so `guest/install-enso.sh` plugs in
-unchanged — it is exactly the kind of stage the harness expects.
-
-This needs [image-builder#2](https://github.com/simbricks/image-builder/pull/2) (branch `incr-build`, open
-at the time of writing). It splits provisioning into base stages (`BASE_SCRIPTS`: kernel, packages, boot
-config, guest init) and component scripts (`EXTRA_SCRIPTS`), and **reboots the guest between the two**.
-That reboot is what makes an Ensō stage possible at all: after it, `uname -r` is the kernel the base stages
-installed, which is the kernel the simulated hosts boot, so the module is built and installed for the right
-one.
-
-So Ensō is one variable on image-builder's `make image`. Build its custom kernel first and use that as the
-base stage, so the module is built against a kernel you control:
+Without a cache the image is rebuilt on every run, which is slow. Give the runner one:
 
 ```sh
-make kernel                          # custom no-initrd kernel -> output/kernel/
-
-make image NAME=enso INPUT=output/kernel \
-    BASE_SCRIPTS="kernel/install-kernel.sh scripts/install-base.sh scripts/configure-boot.sh scripts/install-guestinit.sh" \
-    EXTRA_SCRIPTS=/path/to/component-enso/guest/install-enso.sh
+simbricks-run --image-cache-dir /var/cache/simbricks-images \
+              --image-cache-size 100G \
+              --global-input-dir <dir> examples/enso_echo.py
 ```
 
-`SOURCE_IMAGE` keeps image-builder's default cloud image, so there is nothing to pass. `install-kernel.sh`
-replaces the default kernel stage and installs the `linux-image` / `linux-headers` debs `make kernel`
-produced; the reboot then puts the guest on that kernel, and `install-enso.sh` runs on it. The image lands
-in `output/enso/`. (image-builder can also stay on the distro kernel, or layer Ensō onto a base image it
-built earlier — see its README.)
+Entries are keyed by a content hash of the base image plus every layer, stored as compressed qcow2 deltas,
+and evicted under the size limit. The second run of the same prototype skips the build entirely.
 
-Install the result where orchestration looks for images — `images/<name>/` under the directory passed to
-`simbricks-run --global-input-dir`. image-builder's output directory already has that layout:
+Changing the install script, or the `enso_repo` / `enso_branch` / `enso_dir` arguments, changes the hash and
+rebuilds. **New commits on the same branch do not** — the hash covers the branch name, not what it points
+at. Pin a commit or drop the cache entry when that matters.
 
-```sh
-cp -r output/enso <global-input-dir>/images/enso
-# images/enso/enso        the qcow2 disk
-# images/enso/boot/       vmlinuz / initrd / vmlinux, what host simulators boot
-```
+### What the runner needs
 
-Then use it like any other distro image — no `EnsoDiskImage`, no packer at run time:
+`packer`, `qemu-system-x86_64`, `qemu-img` and `xorriso` (packer builds the cloud-init seed as a CD), plus
+the base image. `/dev/kvm` is optional but worth having: without it packer falls back to `tcg` and the build
+VM takes considerably longer, which is why the SSH timeout adapts (20 minutes with KVM, 90 without).
+
+Two things are required of the **base image**, and a build that hangs at `Waiting for SSH to become
+available` is almost certainly one of them:
+
+- **Its kernel must be able to mount iso9660** (`CONFIG_ISO9660_FS`). Packer hands cloud-init its seed as
+  a CD, under a fresh instance-id, and cloud-init then *has* to read it: on a new-instance boot with no
+  user-data it locks the `ubuntu` account (`passwd -l`), regenerates the host keys and reconfigures the
+  network from a fallback heuristic — so a kernel without iso9660 does not "work by accident", it fails
+  every time. Stock distro kernels have it; image-builder's custom kernel needs
+  `CONFIG_ISO9660_FS=y` in `kernel/config-5.15.93`.
+- Build it with [image-builder](https://github.com/simbricks/image-builder) of **2026-08-12 or later**,
+  which puts `dummy.numdummies=0 bonding.max_bonds=0` on the kernel command line. An older base carries a
+  `dummy0` that cloud-init's fallback NIC pick prefers over the real interface, which turns any boot where
+  the seed is not read into a two-minute stall with no network.
+
+When a build does hang, the guest's own console is at `tmp/imgs/build.*/serial.log`, and its
+`/var/log/cloud-init.log` can be read straight out of the image with
+`virt-cat -a <image> /var/log/cloud-init.log`.
+
+Nothing has to be shipped alongside the run. The install script travels inside the serialized system, so a
+remote runner needs no input artifacts for it.
+
+### Using a prebuilt image instead
+
+If you would rather build the image out of band, install it where orchestration looks for images —
+`images/<name>/` under the directory passed to `simbricks-run --global-input-dir` — and use it directly, with
+no image build in the loop:
 
 ```python
 enso_img = system.DistroDiskImage(syst, "enso")
 host.add_disk(enso_img)
 ```
+
+The image then has to carry its own boot artifacts in `images/<name>/boot/`.
 
 ### At run time: driver and hugepages
 
@@ -268,21 +254,26 @@ make enso-python-develop
 
 ### Iterating on Ensō itself
 
-`guest/install-enso.sh` clones `ENSO_REPO` at `ENSO_BRANCH` (`crossroadsfpga/enso`, branch
-`simbricks-24.04`) into `ENSO_DIR`, so pointing the image at your own work means overriding those. All
-three are read from the **script's** environment inside the guest, which packer does not inherit from the
-host — exporting them next to `simbricks-run` has no effect. Either edit the defaults in the script, or add
-them to the `environment_vars` of the template you build with.
+The install script clones `ENSO_REPO` at `ENSO_BRANCH` (`crossroadsfpga/enso`, branch `simbricks-24.04`)
+into `ENSO_DIR`. Point the image at your own work through the constructor, which exports all three into the
+script when the layer runs:
 
-`make guest-install` runs the script directly, for when you are already inside the guest, and there the
+```python
+enso_img = enso_image(syst, enso_repo="https://github.com/me/enso", enso_branch="my-work")
+```
+
+They are part of the image's content hash, so changing one rebuilds rather than reusing a cached image.
+(Exporting them next to `simbricks-run` still has no effect — nothing carries the orchestration host's
+environment into the guest.)
+
+`make guest-install` runs the script directly, for when you are already inside a guest, and there the
 environment does apply:
 
 ```sh
 ENSO_REPO=https://github.com/me/enso ENSO_BRANCH=my-work make guest-install
 ```
 
-With option 1 the image is rebuilt on every run, so an edit to the script lands in the next run; with
-option 2, rebuild the image.
+An edit to the script changes the hash too, so it lands in the next run.
 
 ## Make target reference
 
@@ -295,7 +286,7 @@ option 2, rebuild the image.
 | `enso-sim-bm-bin-conda` | Build the `simbricks-enso-sim-bm-bin` conda package. |
 | `enso-build` | Build the behavioral model binary. |
 | `enso-install` | Install the model into `$(PREFIX)/bin/simb_enso_bm`. |
-| `guest-install` | Run `guest/install-enso.sh`. Runs in the guest while the image is built. |
+| `guest-install` | Run the packaged `install-enso.sh` directly. For use inside a guest. |
 | `enso-python-develop` | Editable (`pip install -e`) installs of both python packages. |
 | `pypi-build` / `pypi-publish` | Build / publish the python wheels with poetry. |
 | `clean` | Remove the model's build artifacts, `out/` and the python `dist/` dirs. |
@@ -311,7 +302,7 @@ option 2, rebuild the image.
 | `SIMB_CONDA_CHANNEL` | `-c https://conda.simbricks.io/latest` | Channel searched by `conda build` for external SimBricks deps. |
 | `OUTPUT_FOLDER` | *(unset)* | If set, passed to `conda build --output-folder`. |
 
-`guest/install-enso.sh` additionally honours `ENSO_REPO`, `ENSO_BRANCH` and `ENSO_DIR`.
+`install-enso.sh` additionally honours `ENSO_REPO`, `ENSO_BRANCH` and `ENSO_DIR`.
 
 ## Using it in a virtual prototype
 
@@ -329,9 +320,9 @@ from simbricks.components.enso.simulation import behavioral as enso_sim
 syst = system.System("Enso-Example")
 
 host = enso_sys.EnsoLinuxHost(syst)
-# A prebuilt image containing the Ensō software (option 2). For the run-time
-# build instead: enso_sys.EnsoDiskImage(syst, guest_dir=".../guest")
-host.add_disk(system.DistroDiskImage(syst, "enso"))
+# Ensō installed into the `base` image, built when the run is prepared. For a
+# prebuilt image instead: system.DistroDiskImage(syst, "enso")
+host.add_disk(enso_sys.enso_image(syst))
 host.add_disk(system.LinuxConfigDiskImage(syst, host))
 
 nic = enso_sys.EnsoNIC(syst)   # no add_ipv4(): Ensō exposes no kernel netdev
@@ -355,12 +346,17 @@ A complete two-host experiment is in [`examples/enso_echo.py`](examples/enso_ech
 - **PCIe address.** `EnsoGen` does not pass `--pcie-addr` by default and lets `ensogen` find the device.
   QEMU assigns the BDF and it is not knowable from the orchestration side; set `EnsoGen.pcie_addr` if
   autodetection picks the wrong device.
-- The run-time image build (option 1) shells out to `packer` and has only been exercised locally. It is
-  meant to work for remote runs too, which will likely need the image cached somewhere shared rather than
-  derived per runner — building the image up front (option 2) and installing it on the runner avoids the
-  question entirely.
-- Option 2 depends on [image-builder#2](https://github.com/simbricks/image-builder/pull/2), which is still
-  open; until it lands, build from its `incr-build` branch.
+- **Cached images and moving branches.** The image's content hash covers the branch *name*, not the commit
+  it points at, so new upstream commits on `simbricks-24.04` do not invalidate a cached image. Pin a commit
+  or drop the cache entry when you need to pick them up.
+- **Image cleanup runs by default.** `PackerImage.cleanup` purges apt caches, truncates logs and runs
+  `fstrim` after the layers, which the packer template this replaces did not. It only autoremoves orphaned
+  packages, so Ensō's runtime dependencies survive; set `enso_img.cleanup = False` if an image misbehaves.
+- **A recent `simbricks-qemu-sim-py` is required** — the build from 2026-09-07 or later, which takes the
+  kernel from the disk image's boot artifacts. It is still version 0.5.1, only a newer build, so a version
+  constraint will not pull it in; `conda update simbricks-qemu-sim-py` will.
+- The image build has only been exercised locally. Remote runs need no input artifacts for it any more, but
+  the runner does need packer, qemu and `xorriso`.
 
 ## Versioning
 

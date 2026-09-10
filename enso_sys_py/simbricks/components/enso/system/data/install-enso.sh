@@ -1,9 +1,12 @@
 #!/bin/bash -eux
 #
-# Installs Ensō into a guest image. Driven by EnsoDiskImage via enso.pkr.hcl,
-# which boots the image the simulated hosts will run and executes this inside
-# it. Do not run it on your workstation: it apt-installs packages, writes to
-# /lib/modules and installs into /usr/local.
+# Installs Ensō into a guest image. Run by enso_image() (see ../image.py) as
+# the single packer layer inside the booted base image. Do not run it on your
+# workstation: it apt-installs packages, writes to /lib/modules and installs
+# into /usr/local.
+#
+# enso_image() exports ENSO_REPO / ENSO_BRANCH / ENSO_DIR ahead of the defaults
+# below; `make guest-install` runs it with the defaults.
 #
 # Because packer boots the very image the driver will be loaded into, `uname -r`
 # here is already the right kernel, so Ensō's own setup.sh does the whole job:

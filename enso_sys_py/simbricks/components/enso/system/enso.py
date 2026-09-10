@@ -23,15 +23,11 @@
 
 from __future__ import annotations
 
-import asyncio
-import pathlib
-import shutil
 import typing as tp
 
 import typing_extensions as tpe
 
 from simbricks.orchestration.system import base as sys_base
-from simbricks.orchestration.system import disk_images
 from simbricks.orchestration.system import nic
 from simbricks.orchestration.system.host import app
 from simbricks.orchestration.system.host import base as sys_host
@@ -50,129 +46,13 @@ class EnsoNIC(nic.SimplePCIeNIC):
         super().__init__(s)
 
 
-class EnsoDiskImage(disk_images.DistroDiskImage):
-    """
-    A guest image with Ensō installed into it, built by packer on demand.
-
-    Ensō's userspace and its ``intel_fpga_pcie_drv`` kernel module have to be
-    present in the image the simulated hosts boot. This boots the image named by
-    :attr:`name` under packer, runs ``guest/install-enso.sh`` inside it, and
-    writes the result into the run's image dir.
-
-    The image is rebuilt on every run.
-    """
-
-    def __init__(
-        self,
-        system: sys_base.System,
-        guest_dir: str,
-        name: str = "base",
-    ) -> None:
-        super().__init__(system, name)
-        # This repository's guest/ directory
-        self.guest_dir: str = guest_dir
-        # One build per run (hosts potentially share image)
-        self._build_lock: asyncio.Lock | None = None
-        self._built: bool = False
-
-    def path(self, inst: inst_base.Instantiation, format: str) -> str:
-        if format not in ("qcow2", "raw"):
-            raise RuntimeError(f"unsupported disk format {format}")
-        return inst.env.img_dir(f"enso-{self._id}/enso.{format}")
-
-    def _guest_dir(self, inst: inst_base.Instantiation) -> pathlib.Path:
-        """Locate guest/, locally or as an input artifact.
-
-        :attr:`guest_dir` is a path on the machine that wrote the virtual
-        prototype, which a remote runner does not have. Ship it by adding it to
-        ``instantiation.input_artifact_paths``; the client packs it flat, so the
-        runner unpacks it to ``input_artifacts/<basename>``, which is where we
-        fall back to.
-        """
-        local = pathlib.Path(self.guest_dir)
-        if local.is_dir():
-            return local.resolve()
-        return pathlib.Path(inst.env.input_artifacts_dir(local.name, True))
-
-    async def _prepare_format(self, inst: inst_base.Instantiation, format: str) -> None:
-        # Created here rather than in __init__ because fromJSON bypasses it.
-        # Needs no lock of its own: this runs before the first await.
-        if self._build_lock is None:
-            self._build_lock = asyncio.Lock()
-
-        guest = self._guest_dir(inst)
-        qcow2 = pathlib.Path(self.path(inst, "qcow2"))
-
-        async with self._build_lock:
-            if not self._built:
-                # DistroDiskImage.path resolves images/<name>/<name> in the
-                # global input dir -- the image we install into.
-                source = super().path(inst, "qcow2")
-                config = guest / "enso.pkr.hcl"
-
-                # packer writes <output>/<name> and refuses a directory that
-                # already exists.
-                if qcow2.parent.exists():
-                    shutil.rmtree(qcow2.parent)
-                qcow2.parent.parent.mkdir(parents=True, exist_ok=True)
-
-                # packer refuses to build before its qemu plugin is installed.
-                await self._run(["packer", "init", str(config)], cwd=str(guest))
-                await self._run(
-                    [
-                        "packer",
-                        "build",
-                        "-var", f"source_image={source}",
-                        "-var", f"name={qcow2.name}",
-                        "-var", f"output={qcow2.parent}",
-                        "-var", f'scripts=["{guest / "install-enso.sh"}"]',
-                        str(config),
-                    ],
-                    cwd=str(guest),
-                )
-                if not qcow2.is_file():
-                    raise RuntimeError(f"packer reported success but {qcow2} is missing")
-                self._built = True
-
-        raw = pathlib.Path(self.path(inst, "raw"))
-        if format == "raw" and not raw.is_file():
-            # packer writes qcow2; convert for simulators that need a raw disk.
-            await self._run(
-                ["qemu-img", "convert", "-f", "qcow2", "-O", "raw", "-S", "4k",
-                 str(qcow2), str(raw)]
-            )
-
-    @staticmethod
-    async def _run(command: list[str], cwd: str | None = None) -> None:
-        process = await asyncio.create_subprocess_exec(
-            *command, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
-        )
-        stdout, _ = await process.communicate()
-        if process.returncode != 0:
-            print(stdout.decode(errors="replace"))
-            raise RuntimeError(f"command failed: {' '.join(command)}")
-
-    def toJSON(self) -> dict:
-        json_obj = super().toJSON()
-        json_obj["guest_dir"] = self.guest_dir
-        return json_obj
-
-    @classmethod
-    def fromJSON(cls, system: sys_base.System, json_obj: dict) -> tpe.Self:
-        instance = super().fromJSON(system, json_obj)
-        instance.guest_dir = utils_base.get_json_attr_top(json_obj, "guest_dir")
-        instance._build_lock = None
-        instance._built = False
-        return instance
-
-
 class EnsoLinuxHost(sys_host.LinuxHost):
     """
     A Linux host set up to drive an :class:`EnsoNIC`.
 
     On top of a plain Linux host this reserves hugepages, mounts ``hugetlbfs``
     and loads Ensō's kernel driver. The Ensō checkout itself is expected to be
-    in the disk image, provisioned by ``guest/install-enso.sh``.
+    in the disk image, put there by :func:`.image.enso_image`.
     """
 
     def __init__(self, s: sys_base.System) -> None:
@@ -186,8 +66,8 @@ class EnsoLinuxHost(sys_host.LinuxHost):
 
         self.nr_hugepages: int = 4096
 
-        # Ensō's kernel driver, built into the image by guest/install-enso.sh
-        # and installed under /lib/modules/<kver>/extra, so it is modprobe'd by
+        # Ensō's kernel driver, built into the image by install-enso.sh and
+        # installed under /lib/modules/<kver>/extra, so it is modprobe'd by
         # name.
         self.enso_kmod: str = "intel_fpga_pcie_drv"
         self.enso_dev_node: str = "/dev/intel_fpga_pcie_drv"

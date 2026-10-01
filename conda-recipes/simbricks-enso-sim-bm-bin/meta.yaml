@@ -38,7 +38,7 @@ requirements:
     - make
 
   host:
-    - simbricks-lib >=0.5.0
+    - simbricks-lib >=0.6.0
     - libboost-devel
 
   run:

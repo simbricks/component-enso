@@ -29,7 +29,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "simbricks-enso-sys-py"
-version = "0.5.1"
+version = "0.6.0"
 description = "Ensō NIC System integration into SimBricks"
 authors  = [
   "Team SimBricks <team@simbricks.io>"
@@ -44,6 +44,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-simbricks-orchestration = ">=0.5.2"
-simbricks-utils = ">=0.5.0"
-simbricks-imagebuild-packer = ">=0.5.2"
+python = ">=3.12"
+simbricks-orchestration = ">=0.6.0"
+simbricks-utils = ">=0.6.0"
+simbricks-imagebuild-packer = ">=0.6.0"

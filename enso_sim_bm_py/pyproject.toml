@@ -29,7 +29,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "simbricks-enso-sim-bm-py"
-version = "0.5.1"
+version = "0.6.0"
 description = "Ensō NIC behavioral model integration into SimBricks"
 authors  = [
   "Team SimBricks <team@simbricks.io>"
@@ -40,6 +40,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-simbricks-orchestration = ">=0.5.0"
-simbricks-utils = ">=0.5.0"
-simbricks-enso-sys-py = ">=0.5.1"
+python = ">=3.12"
+simbricks-orchestration = ">=0.6.0"
+simbricks-utils = ">=0.6.0"
+simbricks-enso-sys-py = ">=0.6.0"

@@ -28,7 +28,7 @@ ENSO_PY_SIM       := enso_sim_bm_py
 ENSO_PY_SYS       := enso_sys_py
 OUTPUT_FOLDER     ?=
 OUTPUT_FLAG       := $(if $(OUTPUT_FOLDER),--output-folder $(OUTPUT_FOLDER))
-SIMB_CONDA_CHANNEL:= -c https://conda.simbricks.io/stable
+SIMB_CONDA_CHANNEL:= -c https://conda.simbricks.io/latest
 GUEST_SCRIPT      := $(ENSO_PY_SYS)/simbricks/components/enso/system/data/install-enso.sh
 BASE_BUILD_CMD    := conda build $(SIMB_CONDA_CHANNEL) -m conda-recipes/conda_build_config.yaml $(OUTPUT_FLAG)
 
